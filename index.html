@@ -5,15 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ASCII Studio</title>
 <style>
-*{box-sizing:border-box}
-body{background:#17171d;color:#eee;font-family:Arial;padding:18px}
-main{max-width:700px;margin:auto;background:#25252e;padding:20px;border-radius:12px}
+body{background:#17171e;color:#eee;font-family:Arial;padding:18px}
+main{max-width:700px;margin:auto;background:#252530;padding:18px;border-radius:12px}
 h2{color:#ad91ff}
-input,button{width:100%;padding:12px;margin:7px 0;border:0;border-radius:6px}
-input{background:#383844;color:white}
+input,button,textarea{box-sizing:border-box;width:100%;padding:12px;margin:6px 0;border:0;border-radius:6px}
+input,textarea{background:#393945;color:white}
 button{background:#8060df;color:white;font-weight:bold}
 video{width:100%;background:#000}
-#status{color:#b39aff}
+textarea{height:150px}
 </style>
 </head>
 <body>
@@ -21,54 +20,67 @@ video{width:100%;background:#000}
 <h2>ASCII Video Converter</h2>
 <input id="url" placeholder="Video URL">
 <input id="name" placeholder="Video name">
-<input id="width" type="number" value="60" min="10" max="100">
-<input id="fps" type="number" value="5" min="1" max="15">
+<input id="width" type="number" value="45" min="10" max="100">
+<input id="fps" type="number" value="4" min="1" max="15">
 <button onclick="loadVideo()">Load Video</button>
 <video id="video" controls crossorigin="anonymous"></video>
 <button onclick="convert()">Convert</button>
 <button onclick="makeFile()">Makefile</button>
-<button onclick="downloadFile()">Download JSON</button>
+<textarea id="result" placeholder="Generated JSON appears here"></textarea>
+<button onclick="copyJSON()">Copy JSON</button>
 <p id="status">Ready</p>
 <canvas id="canvas" hidden></canvas>
 <script>
 const video=document.getElementById("video");
 const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d",{willReadFrequently:true});
-const chars="@%#*+=-:. ";
+const palette="@%#*+=-:. ";
 let output=null;
 
-function status(t){
- document.getElementById("status").textContent=t;
-}
+function status(s){document.getElementById("status").textContent=s}
+
+const params=new URLSearchParams(location.search);
+if(params.get("url"))document.getElementById("url").value=params.get("url");
+if(params.get("name"))document.getElementById("name").value=params.get("name");
 
 function loadVideo(){
+ video.crossOrigin="anonymous";
  video.src=document.getElementById("url").value.trim();
  video.load();
  video.onloadedmetadata=()=>status("Video loaded");
- video.onerror=()=>status("Video unavailable");
+ video.onerror=()=>status("Video could not load");
+}
+
+async function seek(t){
+ if(Math.abs(video.currentTime-t)<.001 && video.readyState>=2)return;
+ await new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(Error("Seek timeout")),6000);
+  video.addEventListener("seeked",()=>{
+   clearTimeout(timer);
+   resolve();
+  },{once:true});
+  video.currentTime=t;
+ });
 }
 
 async function convert(){
  if(!video.videoWidth)return status("Load a video first");
-
  const name=document.getElementById("name").value.trim();
  if(!name)return status("Enter a name");
 
- const w=Math.max(10,Math.min(100,+document.getElementById("width").value||60));
+ const w=Math.max(10,Math.min(100,+document.getElementById("width").value||45));
  const h=Math.max(1,Math.round(w*video.videoHeight/video.videoWidth*.5));
- const fps=Math.max(1,Math.min(15,+document.getElementById("fps").value||5));
- const count=Math.min(150,Math.ceil(video.duration*fps));
+ const fps=Math.max(1,Math.min(15,+document.getElementById("fps").value||4));
+ const count=Math.min(100,Math.ceil(video.duration*fps));
 
  canvas.width=w;
  canvas.height=h;
  output={name:name,fps:fps,frames:[]};
  video.pause();
 
- for(let n=0;n<count;n++){
-  video.currentTime=Math.min(n/fps,Math.max(0,video.duration-.01));
-  await new Promise(resolve=>video.onseeked=resolve);
-
-  try{
+ try{
+  for(let n=0;n<count;n++){
+   await seek(Math.min(n/fps,Math.max(0,video.duration-.01)));
    ctx.drawImage(video,0,0,w,h);
    const pixels=ctx.getImageData(0,0,w,h).data;
    const frame={width:w,height:h,chars:[],colors:[]};
@@ -76,35 +88,36 @@ async function convert(){
    for(let i=0;i<pixels.length;i+=4){
     const r=pixels[i],g=pixels[i+1],b=pixels[i+2];
     const brightness=r*.299+g*.587+b*.114;
-    const index=Math.min(chars.length-1,Math.floor(brightness/256*chars.length));
-    frame.chars.push(chars[index]);
+    const index=Math.min(palette.length-1,Math.floor(brightness/256*palette.length));
+    frame.chars.push(palette[index]);
     frame.colors.push([r,g,b]);
    }
 
    output.frames.push(frame);
    status("Converting "+(n+1)+"/"+count);
-  }catch(e){
-   return status("Canvas error: "+e.message);
   }
+  status("Conversion complete");
+ }catch(e){
+  status("Conversion failed: "+e.message);
  }
-
- status("Conversion complete");
 }
 
 function makeFile(){
  if(!output)return status("Convert first");
- status("JSON file ready: "+output.frames.length+" frames");
+ document.getElementById("result").value=JSON.stringify(output);
+ status("JSON created. Copy it into Roblox.");
 }
 
-function downloadFile(){
- if(!output)return status("Convert first");
- const blob=new Blob([JSON.stringify(output)],{type:"application/json"});
- const a=document.createElement("a");
- a.href=URL.createObjectURL(blob);
- a.download=output.name+".json";
- a.click();
- setTimeout(()=>URL.revokeObjectURL(a.href),1000);
- status("Downloaded");
+async function copyJSON(){
+ const box=document.getElementById("result");
+ if(!box.value)return status("Makefile first");
+ try{
+  await navigator.clipboard.writeText(box.value);
+  status("JSON copied");
+ }catch(e){
+  box.select();
+  status("Select and copy the JSON manually");
+ }
 }
 </script>
 </main>
