@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASCII Video Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#18181d;color:#eeeaf5;font-family:Arial;padding:18px}
+main{max-width:850px;margin:auto}
+h2{color:#ae8bff}
+.panel{background:#24242d;padding:15px;border-radius:10px;margin:12px 0}
+input,button{padding:12px;border:0;border-radius:7px;margin:5px 0}
+input{background:#30303b;color:white;width:100%}
+button{background:#ae8bff;color:#211b2c;font-weight:bold}
+canvas{width:100%;background:#08080b;border-radius:8px;display:block}
+#status{color:#b6a8d6;font-size:13px}
+video{width:100%;max-height:250px}
+</style>
+</head>
+<body>
+<main>
+<h2>ASCII Video Studio</h2>
+<div class="panel">
+<input id="url" placeholder="Direct MP4 / WebM URL">
+<input id="name" placeholder="Video name">
+<button id="convert">Convert video</button>
+<input id="file" type="file" accept="video/mp4,video/webm">
+<p id="status">Ready</p>
+</div>
+<div class="panel">
+<video id="video" controls playsinline></video>
+<canvas id="ascii" width="800" height="450"></canvas>
+<button id="play">Play</button>
+<button id="stop">Stop</button>
+<button id="save">Save ASCII HTML</button>
+</div>
+</main>
+<script type="module">
+import {asciifyVideo} from 'https://esm.sh/asciify-engine';
+
+const video=document.getElementById('video');
+const canvas=document.getElementById('ascii');
+const status=document.getElementById('status');
+let stopASCII=null;
+let source=null;
+
+async function convert(){
+ try{
+  if(stopASCII){stopASCII();stopASCII=null}
+  status.textContent='Loading video...';
+  if(!video.src)throw new Error('Enter a direct video URL or select a file.');
+  await video.play();
+  video.pause();
+  status.textContent='Converting to colored ASCII...';
+  stopASCII=await asciifyVideo(video,canvas,{
+   fontSize:8,
+   fps:15,
+   fitTo:canvas.parentElement,
+   options:{colorMode:'fullcolor'}
+  });
+  status.textContent='ASCII conversion ready.';
+ }catch(e){status.textContent=e.message}
+}
+
+document.getElementById('convert').onclick=()=>{
+ const u=document.getElementById('url').value.trim();
+ if(!u)return status.textContent='Enter a direct MP4/WebM URL.';
+ video.src=u;
+ video.load();
+ convert();
+};
+
+document.getElementById('file').onchange=e=>{
+ const f=e.target.files[0];
+ if(!f)return;
+ if(source)URL.revokeObjectURL(source);
+ source=URL.createObjectURL(f);
+ video.src=source;
+ video.load();
+ convert();
+};
+
+document.getElementById('play').onclick=()=>video.play();
+document.getElementById('stop').onclick=()=>{
+ video.pause();
+ if(stopASCII){stopASCII();stopASCII=null}
+ status.textContent='Stopped';
+};
+
+document.getElementById('save').onclick=()=>{
+ const blob=new Blob([document.documentElement.outerHTML],{type:'text/html'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download=(document.getElementById('name').value||'ascii-video')+'.html';
+ a.click();
+ URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>
